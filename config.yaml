@@ -1,11 +1,8 @@
-EXP_NAME: ONLY_2D_SEED_358053
 DATASET:
   IMG_RES: 224
   DB_FILE_PATH: 'data/h36m/h36m_train.pt'
   EVAL_DB_FILE_PATH: 'data/h36m/h36m_val_subset.pt'
   TEST_DB_FILE_PATH: './data/3dpw/3dpw_test_db.mine.pt'
-  FRAME_SKIP: 1
-  HDF5: True
 NUM_WORKERS: 8
 OPTIMIZER:
   TYPE: 'adam'
@@ -27,8 +24,6 @@ TRAIN:
   # PRETRAINED: '/home/batuhan/Source/Depth/ssl-part-render/results/root_rotation/dw5.0/root_rotation/a419131571f1467eac185febac1f0791/checkpoints/epoch=29-mpjpe=235.4680.ckpt'
   BATCH_SIZE: 32
   MAX_EPOCH: 1
-  LOG_FREQ_TB_IMAGES: 50
-  SAVE_IMAGES: False
 
 TEST:
   LOG_FREQ_TB_IMAGES: 100

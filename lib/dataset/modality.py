@@ -22,6 +22,9 @@ def to_cv2(img: torch.Tensor):
 
 
 class Modality:
+    def __init__(self, index_record, data_root=None):
+        self.index_record = index_record
+        self.data_root = data_root
     def getitem(self, index, augmentation_params) -> dict:
         raise NotImplementedError
 
@@ -30,8 +33,8 @@ class Modality:
 
 
 class ImageModality(Modality):
-    def __init__(self, index_record, options):
-        self.index_record = index_record
+    def __init__(self, index_record, data_root, options):
+        super().__init__(index_record, data_root)
         self.options = options
         self.normalize_img = Normalize(mean=constants.IMG_NORM_MEAN, std=constants.IMG_NORM_STD)
 
@@ -56,14 +59,19 @@ class ImageModality(Modality):
 
     def getitem(self, index, augmentation_params):
         scale, center, flip, pn, rot, sc = augmentation_params
-        img_path = str(self.index_record['image_path'][index])
-        hdf5_path = os.path.dirname(os.path.realpath(img_path)) + '.hdf5'
-        if os.path.exists(hdf5_path):
-            hf = h5py.File(hdf5_path,'r')
-            binary = np.array(hf[img_path])
-            img = np.asarray(Image.open(io.BytesIO(binary)))
+        img_path = str(self.index_record[index])
+        if img_path.startswith('hdf5'):
+            hdf5_path, img_path_in_hdf5 = img_path.split('@')
+            hdf5_path = f'{self.data_root}/{hdf5_path}'
+            # TODO: remove this!
+            try:
+                hf = h5py.File(hdf5_path,'r')
+                binary = np.array(hf[img_path_in_hdf5])
+                img = np.asarray(Image.open(io.BytesIO(binary)))
+            except:
+                return {'image_path': img_path, 'img': torch.zeros(3,224,224)}
         else:
-            img = np.asarray(Image.open(img_path))
+            img = np.asarray(Image.open(f'{self.data_root}/{img_path}'))
 
 
 
@@ -229,50 +237,52 @@ class SmplModality(Modality):
 
 
 class DensePoseModality(Modality):
-    def __init__(self, index_record, root, dp_size=(256, 256)):
-        self.index_record = index_record
-        self.root = root
+    def __init__(self, index_record, data_root, dp_size=(256, 256)):
+        super().__init__(index_record, data_root)
         self.dp_size = dp_size
 
     def getitem(self, index, augmentation_params):
-        img_path = self.index_record['image_path'][index]
-        dp_path = str(img_path).replace('data/h36m_images', self.root).replace('.jpg', '_dp.png')
-
+        img_path = self.index_record[index]
         img_densepose = np.zeros(self.dp_size + (3,), dtype='uint8')
         valid = False
-        # if os.path.exists(dp_path):
-        #     img_densepose = cv2.resize(cv2.imread(dp_path), self.dp_size)
-        #     if np.count_nonzero(img_densepose[..., 0]) > 1000:
-        #         valid = True
-        hf = h5py.File(f'data/depth/h36m_curated.hdf5', 'r')
-        if dp_path in hf:
-            #breakpoint()
-            binary = np.array(hf[dp_path])
-            img_densepose = np.asarray(Image.open(io.BytesIO(binary)))[...,::-1]
-            if np.count_nonzero(img_densepose[..., 0]) > 1000:
-                valid = True
+        if img_path.startswith('hdf5'):
+            hdf5_path, dp_path_in_hdf5 = img_path.split('@')
+            hdf5_path = f'{self.data_root}/{hdf5_path}'
+            hf = h5py.File(hdf5_path, 'r')
+            if dp_path_in_hdf5 in hf:
+                binary = np.array(hf[dp_path_in_hdf5])
+                img_densepose = np.asarray(Image.open(io.BytesIO(binary)))[...,::-1]
+                if np.count_nonzero(img_densepose[..., 0]) > 1000:
+                    valid = True
+        else:
+            # TODO: support imgfile read for densepose
+            pass
         img_densepose = torch.from_numpy(img_densepose.copy()).permute(2, 0, 1)
         return {'dp_valid': valid, 'dp': img_densepose}
 
     def get_image(self, input_img, data):
         input_img = super().get_image(input_img, None)
         densepose_img = np.transpose(data.cpu().detach().numpy().copy(), (1, 2, 0)).astype('uint8')
+        densepose_img[densepose_img[..., 0] == 0] = 255
         densepose_img = cv2.resize(densepose_img, (input_img.shape[1], input_img.shape[0]))
         return densepose_img
 
 
 class DepthModality(Modality):
-    def __init__(self, index_record, root, depth_size=(256, 256)):
-        self.index_record = index_record
-        self.root = root
+    def __init__(self, index_record, data_root, depth_size=(256, 256)):
+        super().__init__(index_record, data_root)
         self.depth_size = depth_size
 
     def getitem(self, index, augmentation_params):
-        img_path = self.index_record['image_path'][index]
-        depth_path = str(img_path).replace('data/h36m_images', self.root).replace('.jpg', '.npz')
-        hf = h5py.File(f'data/depth/h36m_curated.hdf5', 'r')
-        if depth_path in hf:
-            binary = np.array(hf[depth_path])
+        img_path = self.index_record[index]
+        valid = False
+        if img_path.startswith('hdf5'):
+            hdf5_path, depth_path_in_hdf5 = img_path.split('@')
+        hdf5_path = f'{self.data_root}/{hdf5_path}'
+        # breakpoint()
+        hf = h5py.File(hdf5_path, 'r')
+        if depth_path_in_hdf5 in hf:
+            binary = np.array(hf[depth_path_in_hdf5])
             depth_data = np.load(io.BytesIO(binary))
             depth_tensor = cv2.resize(depth_data['depth'], self.depth_size)
             f = depth_data.get('f', np.zeros(1) + self.depth_size[0] * 2).astype(np.float32)
@@ -294,8 +304,11 @@ class DepthModality(Modality):
     def get_image(self, input_img, data):
         input_img = super().get_image(input_img, None)
         depth_img = data.cpu().detach().numpy().copy()
-        depth_img = depth_img / np.max(depth_img) * 255
-        depth_img = depth_img.astype(np.uint8)
-        heatmap = cv2.applyColorMap(depth_img, cv2.COLORMAP_HOT)
-        heatmap = cv2.resize(heatmap, (input_img.shape[1], input_img.shape[0]))
+        bg_mask = depth_img == 0
+        depth_img[bg_mask] = depth_img.max()
+        depth_img = depth_img - depth_img.min()
+        depth_img = (depth_img / depth_img.max() * 255.).astype(np.uint8)
+        depth_img = cv2.applyColorMap(depth_img, cv2.COLORMAP_JET)
+        depth_img[bg_mask] = 255
+        heatmap = cv2.resize(depth_img, (input_img.shape[1], input_img.shape[0]))
         return heatmap

@@ -50,15 +50,17 @@ class ModularBaseDataset(Dataset):
         return np.vstack(batch_imgs)
 
 
-class SingleViewH36MTestDataset(ModularBaseDataset):
-    def __init__(self, db_file_path, options, use_augmentation=False):
+class Dataset3D(ModularBaseDataset):
+    def __init__(self, db_file_path, data_root, options, hdf5=True, use_augmentation=False):
         super().__init__(db_file_path, options)
         self.use_augmentation = use_augmentation
         self.modalities = {
-            'img': ImageModality(self.db, options),
+            'img': ImageModality(self.db['image_path_hdf'] if hdf5 else self.db['image_path'], data_root, options),
             'kp_2d': Keypoints2D(self.db, options),
             'kp_3d': Keypoints3D(self.db, options),
         }
+        if 'pose' in self.db.keys():
+            self.modalities['smpl'] = SmplModality(self.db)
 
     def generate_augmentation_params(self):
         """Get augmentation parameters."""
@@ -95,18 +97,17 @@ class SingleViewH36MTestDataset(ModularBaseDataset):
         return (scale, center) + self.generate_augmentation_params()
 
 
-class SingleViewH36MTrainDataset(SingleViewH36MTestDataset):
-    def __init__(self, db_file_path, options, use_augmentation=False):
-        super().__init__(db_file_path, options, is_train=True, use_augmentation=use_augmentation)
-        self.modalities['smpl'] = SmplModality(self.db)
-        self.modalities['dp'] = DensePoseModality(self.db, 'data/depth/h36m_curated/', dp_size=(256, 256))
-        self.modalities['depth'] = DepthModality(self.db, 'data/depth/h36m_curated/', depth_size=(256, 256))
+class DatasetDepth(Dataset3D):
+    def __init__(self, db_file_path, data_root, options, hdf5=True, use_augmentation=False):
+        super().__init__(db_file_path, data_root, options, hdf5, use_augmentation=use_augmentation)
+        self.modalities['dp'] = DensePoseModality(self.db['dp_path_hdf'], data_root, dp_size=(256, 256))
+        self.modalities['depth'] = DepthModality(self.db['depth_path_hdf'], data_root, depth_size=(256, 256))
 
 
 if __name__ == '__main__':
     cfg, cfg_file = parse_args()
 
-    dataset = SingleViewH36MTestDataset(f'./data/3dpw/3dpw_test_db.mine.pt', cfg, use_augmentation=False)
+    dataset = DatasetDepth(f'./data_new/h36m/h36m_test.pt',f'./data_new/h36m', cfg, use_augmentation=False)
     dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
         batch_size=32,

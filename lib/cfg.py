@@ -5,17 +5,11 @@ from yacs.config import CfgNode as CN
 # Configuration variables
 cfg = CN()
 
-cfg.OUTPUT_DIR = 'results'
-cfg.EXP_NAME = 'default'
 cfg.DEVICE = 'cuda'
-cfg.DEBUG = False
-cfg.LOGDIR = ''
 cfg.NUM_WORKERS = 8
-cfg.DEBUG_FREQ = 10
 cfg.SEED_VALUE = -1
 cfg.PIN_MEMORY = False
 cfg.FOCAL_LENGTH = 5000.
-cfg.MESH_COLOR = 'blue'
 
 cfg.CUDNN = CN()
 cfg.CUDNN.BENCHMARK = True
@@ -27,20 +21,15 @@ cfg.DATASET = CN()
 cfg.DATASET.DB_FILE_PATH = ''
 cfg.DATASET.EVAL_DB_FILE_PATH = ''
 cfg.DATASET.TEST_DB_FILE_PATH = ''
-cfg.DATASET.HDF5 = True
 cfg.DATASET.IMG_RES = 224
 cfg.DATASET.SHUFFLE_TRAIN = False
-cfg.DATASET.FRAME_SKIP = 1
 
 # TRAIN
 cfg.TRAIN = CN()
 cfg.TRAIN.BATCH_SIZE = 32
 cfg.TRAIN.MAX_EPOCH = 30
 cfg.TRAIN.VAL_BATCH_SIZE = 32
-cfg.TRAIN.RESUME = ''
 cfg.TRAIN.PRETRAINED = None
-cfg.TRAIN.LOG_FREQ_TB_IMAGES = 200
-cfg.TRAIN.SAVE_IMAGES = True
 
 # OPTIMIZER
 cfg.OPTIMIZER = CN()
