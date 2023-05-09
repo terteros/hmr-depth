@@ -23,9 +23,17 @@ def parse_image_path(img_path: str):
 
 
 class ModularBaseDataset(Dataset):
-    def __init__(self, db_file_path, options):
+    def __init__(self, db_file_path, options, frame_skip=1):
         self.options = options
         self.db = joblib.load(db_file_path)
+        if frame_skip is None:
+            frame_skip = options.DATASET.FRAME_SKIP
+        def not_skip(img_name):
+            id = int(str(img_name).split('/')[-1].split('.')[0].replace('image_',''))
+            return (id-1) % frame_skip == 0
+        frame_skip_mask = np.vectorize(not_skip)(self.db['image_path'])
+        self.db = select_batches(self.db, frame_skip_mask)
+
         self.modalities = {}
 
     def generate_post_processing_params(self, item_idx):
@@ -51,8 +59,8 @@ class ModularBaseDataset(Dataset):
 
 
 class Dataset3D(ModularBaseDataset):
-    def __init__(self, db_file_path, data_root, options, hdf5=True, use_augmentation=False):
-        super().__init__(db_file_path, options)
+    def __init__(self, db_file_path, data_root, options, hdf5=True, frame_skip=1, use_augmentation=False):
+        super().__init__(db_file_path, options, frame_skip=frame_skip)
         self.use_augmentation = use_augmentation
         self.modalities = {
             'img': ImageModality(self.db['image_path_hdf'] if hdf5 else self.db['image_path'], data_root, options),
@@ -98,8 +106,8 @@ class Dataset3D(ModularBaseDataset):
 
 
 class DatasetDepth(Dataset3D):
-    def __init__(self, db_file_path, data_root, options, hdf5=True, use_augmentation=False):
-        super().__init__(db_file_path, data_root, options, hdf5, use_augmentation=use_augmentation)
+    def __init__(self, db_file_path, data_root, options, hdf5=True, frame_skip=1, use_augmentation=False):
+        super().__init__(db_file_path, data_root, options, hdf5, frame_skip=frame_skip, use_augmentation=use_augmentation)
         self.modalities['dp'] = DensePoseModality(self.db['dp_path_hdf'], data_root, dp_size=(256, 256))
         self.modalities['depth'] = DepthModality(self.db['depth_path_hdf'], data_root, depth_size=(256, 256))
 
@@ -107,7 +115,7 @@ class DatasetDepth(Dataset3D):
 if __name__ == '__main__':
     cfg, cfg_file = parse_args()
 
-    dataset = DatasetDepth(f'./data_new/h36m/h36m_test.pt',f'./data_new/h36m', cfg, use_augmentation=False)
+    dataset = DatasetDepth(f'./data_new/h36m/h36m_test.pt',f'./data_new/h36m', cfg, frame_skip=10, use_augmentation=False)
     dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
         batch_size=32,
