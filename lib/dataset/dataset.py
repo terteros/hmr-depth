@@ -61,6 +61,10 @@ class ModularBaseDataset(Dataset):
 class Dataset3D(ModularBaseDataset):
     def __init__(self, db_file_path, data_root, options, hdf5=True, frame_skip=1, use_augmentation=False):
         super().__init__(db_file_path, options, frame_skip=frame_skip)
+
+        # TODO: remove this h36m specific part
+        missinghdfmask = np.vectorize(lambda p: not 'S1' in p and not 'S5' in p)(self.db['image_path'])
+        self.db = select_batches(self.db, missinghdfmask)
         self.use_augmentation = use_augmentation
         self.modalities = {
             'img': ImageModality(self.db['image_path_hdf'] if hdf5 else self.db['image_path'], data_root, options),
@@ -70,6 +74,7 @@ class Dataset3D(ModularBaseDataset):
         if 'pose' in self.db.keys():
             self.modalities['smpl'] = SmplModality(self.db)
 
+    # TODO: augmentation is never used.
     def generate_augmentation_params(self):
         """Get augmentation parameters."""
         flip = 0  # flipping
@@ -115,7 +120,7 @@ class DatasetDepth(Dataset3D):
 if __name__ == '__main__':
     cfg, cfg_file = parse_args()
 
-    dataset = DatasetDepth(f'./data_new/h36m/h36m_test.pt',f'./data_new/h36m', cfg, frame_skip=10, use_augmentation=False)
+    dataset = DatasetDepth(f'./data/h36m/h36m_train.pt',f'./data/h36m', cfg, frame_skip=10, use_augmentation=False)
     dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
         batch_size=32,

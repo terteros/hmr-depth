@@ -63,13 +63,9 @@ class ImageModality(Modality):
         if img_path.startswith('hdf5'):
             hdf5_path, img_path_in_hdf5 = img_path.split('@')
             hdf5_path = f'{self.data_root}/{hdf5_path}'
-            # TODO: remove this!
-            try:
-                hf = h5py.File(hdf5_path,'r')
-                binary = np.array(hf[img_path_in_hdf5])
-                img = np.asarray(Image.open(io.BytesIO(binary)))
-            except:
-                return {'image_path': img_path, 'img': torch.zeros(3,224,224)}
+            hf = h5py.File(hdf5_path,'r')
+            binary = np.array(hf[img_path_in_hdf5])
+            img = np.asarray(Image.open(io.BytesIO(binary)))
         else:
             img = np.asarray(Image.open(f'{self.data_root}/{img_path}'))
 
@@ -105,7 +101,6 @@ class Keypoints2D(Modality):
         scale, center, flip, pn, rot, sc = augmentation_params
         kp_2d = self.index_record['joints2D'][index].copy()
         kp_2d = self.j2d_processing(kp_2d, center, sc * scale, rot, flip)
-        kp_3d = torch.from_numpy(kp_2d).float()
         return {'kp_2d': kp_2d}
 
     def get_image(self, input_img, kp_2d):
@@ -148,7 +143,7 @@ class Keypoints3D(Modality):
         self.options = options
 
     @staticmethod
-    def j3d_processing(self, S, r, f):
+    def j3d_processing(S, r, f):
         """Process gt 3D keypoints and apply all augmentation transforms."""
         # in-plane rotation
         rot_mat = np.eye(3)
