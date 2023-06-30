@@ -87,7 +87,6 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, help='cfg file path')
     args = parser.parse_args()
-    print(args, end='\n\n')
 
     cfg_file = args.cfg
     if args.cfg is not None:

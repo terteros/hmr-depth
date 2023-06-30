@@ -11,6 +11,7 @@ from torchvision.transforms import Normalize
 from ..kp_utils import get_common_joint_names, get_common_skeleton
 from .image_utils import flip_img, transform, rot_aa, flip_kp, flip_pose
 from lib import constants
+from ..misc import to_numpy
 
 
 def to_cv2(img: torch.Tensor):
@@ -101,7 +102,10 @@ class Keypoints2D(Modality):
 
     def get_image(self, input_img, kp_2d):
         kp_img = super().get_image(input_img, None)
-        kp_2d = kp_2d.cpu().numpy()
+        kp_2d = to_numpy(kp_2d)
+        # add confidence values if dont exist
+        if kp_2d.shape[-1] == 2:
+            kp_2d = np.concatenate([kp_2d, np.ones((kp_2d.shape[0], 1))],axis=-1)
         kp_2d[:, :2] = 0.5 * 224 * (kp_2d[:, :2] + 1)  # normalize_2d_kp(kp_2d[:,:2], 224, inv=True)
         #kp_2d = np.hstack([kp_2d, np.ones((kp_2d.shape[0], 1))])
         kp_2d[:, 2] = kp_2d[:, 2] > 0.3
@@ -150,7 +154,6 @@ class Keypoints3D(Modality):
             rot_mat[1, :2] = [sn, cs]
         # breakpoint()
         S = np.einsum('ij,kj->ki', rot_mat, S)
-        print('rot_mat',rot_mat)
         # flip the x coordinates
         if f:
             S = flip_kp(S)
@@ -168,8 +171,8 @@ class Keypoints3D(Modality):
         kp_img = super().get_image(input_img, None)
         kp_img = np.ones_like(kp_img) * 255
         kp_2d = kp_3d[25:39]
-        print("MEAN KP DEPTH: ", kp_2d[:, 2].mean())
-        kp_2d = kp_2d.cpu().numpy()
+        # print("MEAN KP DEPTH: ", kp_2d[:, 2].mean())
+        kp_2d = to_numpy(kp_2d)
         kp_2d[:, 0] = kp_2d[:,0] - kp_2d[:,0].min()
         kp_2d[:, 1] = kp_2d[:, 1] - kp_2d[:, 1].min()
         kp_2d *= 224. / kp_2d[:,:2].max()

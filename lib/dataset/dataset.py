@@ -118,7 +118,7 @@ class DatasetDepth(Dataset3D):
 if __name__ == '__main__':
     cfg, cfg_file = parse_args()
 
-    dataset = DatasetDepth(f'./data/h36m/h36m_train.pt',f'./data/h36m', cfg, frame_skip=10, use_augmentation=False)
+    dataset = Dataset3D(f'./data/3dpw/3dpw_train_db.pt', f'./data/3dpw', cfg, frame_skip=10, use_augmentation=True)
     dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
         batch_size=32,
