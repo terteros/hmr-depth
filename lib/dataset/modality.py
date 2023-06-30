@@ -8,8 +8,8 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision.transforms import Normalize
-import kp_utils
-from .image_utils import crop_cv2, flip_img, transform, rot_aa, flip_kp, flip_pose
+from ..kp_utils import get_common_joint_names, get_common_skeleton
+from .image_utils import flip_img, transform, rot_aa, flip_kp, flip_pose
 from lib import constants
 
 
@@ -38,12 +38,12 @@ class ImageModality(Modality):
         self.options = options
         self.normalize_img = Normalize(mean=constants.IMG_NORM_MEAN, std=constants.IMG_NORM_STD)
 
-    def rgb_processing(self, rgb_img, center, scale, rot, flip, pn):
+    def rgb_processing(self, rgb_img, trans, flip, pn):
         """Process rgb image and do augmentation."""
-
-        rgb_img = crop_cv2(rgb_img, center, scale,
-                           [self.options.DATASET.IMG_RES, self.options.DATASET.IMG_RES], rot=rot)
-
+        rgb_img = cv2.warpAffine(
+            rgb_img, trans[:2], (self.options.DATASET.IMG_RES, self.options.DATASET.IMG_RES),
+            flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT
+        )
         # flip the image
         if flip:
             rgb_img = flip_img(rgb_img)
@@ -58,7 +58,7 @@ class ImageModality(Modality):
         return rgb_img
 
     def getitem(self, index, augmentation_params):
-        scale, center, flip, pn, rot, sc = augmentation_params
+        scale, center, flip, pn, rot, sc, transform_matrix = augmentation_params
         img_path = str(self.index_record[index])
         if img_path.startswith('hdf5'):
             hdf5_path, img_path_in_hdf5 = img_path.split('@')
@@ -69,9 +69,7 @@ class ImageModality(Modality):
         else:
             img = np.asarray(Image.open(f'{self.data_root}/{img_path}'))
 
-
-
-        img = self.rgb_processing(img, center, sc * scale, rot, flip, pn)
+        img = self.rgb_processing(img, transform_matrix, flip, pn)
         img = torch.from_numpy(img).float()
         img = self.normalize_img(img)
         return {'image_path': img_path, 'img': img}
@@ -82,13 +80,11 @@ class Keypoints2D(Modality):
         self.index_record = index_record
         self.options = options
 
-    def j2d_processing(self, kp, center, scale, r, f):
+    def j2d_processing(self, kp, transform_matrix, f):
         """Process gt 2D keypoints and apply all augmentation transforms."""
         nparts = kp.shape[0]
-
         for i in range(nparts):
-            kp[i, 0:2] = transform(kp[i, 0:2], center, scale,
-                                   [self.options.DATASET.IMG_RES, self.options.DATASET.IMG_RES], rot=r)
+            kp[i, 0:2] = transform(kp[i, 0:2], transform_matrix)
         # convert to normalized coordinates
         kp[:, :-1] = 2. * kp[:, :-1] / self.options.DATASET.IMG_RES - 1.
         # flip the x coordinates
@@ -98,9 +94,9 @@ class Keypoints2D(Modality):
         return kp
 
     def getitem(self, index, augmentation_params):
-        scale, center, flip, pn, rot, sc = augmentation_params
+        scale, center, flip, pn, rot, sc, transform_matrix = augmentation_params
         kp_2d = self.index_record['joints2D'][index].copy()
-        kp_2d = self.j2d_processing(kp_2d, center, sc * scale, rot, flip)
+        kp_2d = self.j2d_processing(kp_2d, transform_matrix, flip)
         return {'kp_2d': kp_2d}
 
     def get_image(self, input_img, kp_2d):
@@ -116,8 +112,8 @@ class Keypoints2D(Modality):
         pcolor = [0, 255, 0]
         lcolor = [0, 0, 255]
 
-        skeleton = kp_utils.get_common_skeleton()
-        joints = kp_utils.get_common_joint_names()
+        skeleton = get_common_skeleton()
+        joints = get_common_joint_names()
 
         # common_lr = [0,0,1,1,0,0,0,0,1,0,0,1,1,1,0]
         for idx, pt in enumerate(kp_2d):
@@ -152,7 +148,9 @@ class Keypoints3D(Modality):
             sn, cs = np.sin(rot_rad), np.cos(rot_rad)
             rot_mat[0, :2] = [cs, -sn]
             rot_mat[1, :2] = [sn, cs]
-        S[:, :-1] = np.einsum('ij,kj->ki', rot_mat, S[:, :-1])
+        # breakpoint()
+        S = np.einsum('ij,kj->ki', rot_mat, S)
+        print('rot_mat',rot_mat)
         # flip the x coordinates
         if f:
             S = flip_kp(S)
@@ -160,8 +158,9 @@ class Keypoints3D(Modality):
         return S
 
     def getitem(self, index, augmentation_params):
-        scale, center, flip, pn, rot, sc = augmentation_params
+        scale, center, flip, pn, rot, sc, transform_matrix = augmentation_params
         kp_3d = self.index_record['joints3D'][index].copy()
+        kp_3d = self.j3d_processing(kp_3d, rot, flip)
         kp_3d = torch.from_numpy(kp_3d).float()
         return {'kp_3d': kp_3d}
 
@@ -183,8 +182,8 @@ class Keypoints3D(Modality):
         pcolor = [0, 255, 0]
         lcolor = [0, 0, 255]
 
-        skeleton = kp_utils.get_common_skeleton()
-        joints = kp_utils.get_common_joint_names()
+        skeleton = get_common_skeleton()
+        joints = get_common_joint_names()
 
         # common_lr = [0,0,1,1,0,0,0,0,1,0,0,1,1,1,0]
         for idx, pt in enumerate(kp_2d):
@@ -221,7 +220,7 @@ class SmplModality(Modality):
         return pose
 
     def getitem(self, index, augmentation_params):
-        scale, center, flip, pn, rot, sc = augmentation_params
+        scale, center, flip, pn, rot, sc, transform_matrix = augmentation_params
         pose = self.index_record['pose'][index].copy()
         pose = self.pose_processing(pose, rot, flip)
         shape = self.index_record['shape'][index].copy()

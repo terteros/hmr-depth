@@ -7,10 +7,6 @@ import scipy.misc
 
 from lib import constants
 
-def show_image(img):
-    cv2.imshow('q', img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 def get_transform(center, scale, res, rot=0):
     """Generate transformation matrix."""
@@ -40,51 +36,15 @@ def get_transform(center, scale, res, rot=0):
     return t
 
 
-def transform(pt, center, scale, res, invert=0, rot=0):
+def transform(pt, t, invert=False):
     """Transform pixel location to different reference."""
-    t = get_transform(center, scale, res, rot=rot)
     if invert:
         t = np.linalg.inv(t)
     new_pt = np.array([pt[0], pt[1], 1.]).T
     new_pt = np.dot(t, new_pt)
-    return new_pt[:2].astype(int) + 1
+    return new_pt[:2].astype(int)
 
 
-def crop(img, center, scale, res, rot=0):
-    """Crop image according to the supplied bounding box."""
-    # Upper left point
-    ul = np.array(transform([1, 1], center, scale, res, invert=1)) - 1
-    # Bottom right point
-    br = np.array(transform([res[0] + 1,
-                             res[1] + 1], center, scale, res, invert=1)) - 1
-
-    # Padding so that when rotated proper amount of context is included
-    pad = int(np.linalg.norm(br - ul) / 2 - float(br[1] - ul[1]) / 2)
-    if not rot == 0:
-        ul -= pad
-        br += pad
-
-    new_shape = [br[1] - ul[1], br[0] - ul[0]]
-    if len(img.shape) > 2:
-        new_shape += [img.shape[2]]
-    new_img = np.zeros(new_shape)
-
-    # Range to fill new array
-    new_x = max(0, -ul[0]), min(br[0], len(img[0])) - ul[0]
-    new_y = max(0, -ul[1]), min(br[1], len(img)) - ul[1]
-    # Range to sample from original image
-    old_x = max(0, ul[0]), min(len(img[0]), br[0])
-    old_y = max(0, ul[1]), min(len(img), br[1])
-    new_img[new_y[0]:new_y[1], new_x[0]:new_x[1]] = img[old_y[0]:old_y[1],
-                                                    old_x[0]:old_x[1]]
-
-    if not rot == 0:
-        # Remove padding
-        new_img = scipy.misc.imrotate(new_img, rot)
-        new_img = new_img[pad:-pad, pad:-pad]
-
-    new_img = scipy.misc.imresize(new_img, res)
-    return new_img
 
 
 def rotate_2d(pt_2d, rot_rad):
@@ -96,86 +56,6 @@ def rotate_2d(pt_2d, rot_rad):
     return np.array([xx, yy], dtype=np.float32)
 
 
-def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_height, scale, rot, inv=False):
-    # augment size with scale
-    src_w = src_width * scale
-    src_h = src_height * scale
-    src_center = np.zeros(2)
-    src_center[0] = c_x
-    src_center[1] = c_y  # np.array([c_x, c_y], dtype=np.float32)
-    # augment rotation
-    rot_rad = np.pi * rot / 180
-    src_downdir = rotate_2d(np.array([0, src_h * 0.5], dtype=np.float32), rot_rad)
-    src_rightdir = rotate_2d(np.array([src_w * 0.5, 0], dtype=np.float32), rot_rad)
-
-    dst_w = dst_width
-    dst_h = dst_height
-    dst_center = np.array([dst_w * 0.5, dst_h * 0.5], dtype=np.float32)
-    dst_downdir = np.array([0, dst_h * 0.5], dtype=np.float32)
-    dst_rightdir = np.array([dst_w * 0.5, 0], dtype=np.float32)
-
-    src = np.zeros((3, 2), dtype=np.float32)
-    src[0, :] = src_center
-    src[1, :] = src_center + src_downdir
-    src[2, :] = src_center + src_rightdir
-
-    dst = np.zeros((3, 2), dtype=np.float32)
-    dst[0, :] = dst_center
-    dst[1, :] = dst_center + dst_downdir
-    dst[2, :] = dst_center + dst_rightdir
-
-    if inv:
-        trans = cv2.getAffineTransform(np.float32(dst), np.float32(src))
-    else:
-        trans = cv2.getAffineTransform(np.float32(src), np.float32(dst))
-
-    return trans
-
-
-def crop_cv2(img, center, scale, res, rot=0):
-    c_x, c_y = center
-    c_x, c_y = int(round(c_x)), int(round(c_y))
-    patch_width, patch_height = int(round(res[0])), int(round(res[1]))
-    bb_width = bb_height = int(round(scale))
-
-    trans = gen_trans_from_patch_cv(
-        c_x, c_y, bb_width, bb_height,
-        patch_width, patch_height,
-        scale=1.0, rot=rot, inv=False,
-    )
-
-    crop_img = cv2.warpAffine(
-        img, trans, (int(patch_width), int(patch_height)),
-        flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT
-    )
-    return crop_img
-
-
-def uncrop(img, center, scale, orig_shape, rot=0, is_rgb=True):
-    """'Undo' the image cropping/resizing.
-    This function is used when evaluating mask/part segmentation.
-    """
-    res = img.shape[:2]
-    # Upper left point
-    ul = np.array(transform([1, 1], center, scale, res, invert=1)) - 1
-    # Bottom right point
-    br = np.array(transform([res[0] + 1, res[1] + 1], center, scale, res, invert=1)) - 1
-    # size of cropped image
-    crop_shape = [br[1] - ul[1], br[0] - ul[0]]
-
-    new_shape = [br[1] - ul[1], br[0] - ul[0]]
-    if len(img.shape) > 2:
-        new_shape += [img.shape[2]]
-    new_img = np.zeros(orig_shape, dtype=np.uint8)
-    # Range to fill new array
-    new_x = max(0, -ul[0]), min(br[0], orig_shape[1]) - ul[0]
-    new_y = max(0, -ul[1]), min(br[1], orig_shape[0]) - ul[1]
-    # Range to sample from original image
-    old_x = max(0, ul[0]), min(orig_shape[1], br[0])
-    old_y = max(0, ul[1]), min(orig_shape[0], br[1])
-    img = scipy.misc.imresize(img, crop_shape, interp='nearest')
-    new_img[old_y[0]:old_y[1], old_x[0]:old_x[1]] = img[new_y[0]:new_y[1], new_x[0]:new_x[1]]
-    return new_img
 
 
 def rot_aa(aa, rot):
@@ -192,6 +72,19 @@ def rot_aa(aa, rot):
     return aa
 
 
+# Permutation of SMPL pose parameters when flipping the shape
+SMPL_JOINTS_FLIP_PERM = [0, 2, 1, 3, 5, 4, 6, 8, 7, 9, 11, 10, 12, 14, 13, 15, 17, 16, 19, 18, 21, 20, 23, 22]
+SMPL_POSE_FLIP_PERM = []
+for i in SMPL_JOINTS_FLIP_PERM:
+    SMPL_POSE_FLIP_PERM.append(3*i)
+    SMPL_POSE_FLIP_PERM.append(3*i+1)
+    SMPL_POSE_FLIP_PERM.append(3*i+2)
+# Permutation indices for the 24 ground truth joints
+J24_FLIP_PERM = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13, 14, 15, 16, 17, 18, 19, 21, 20, 23, 22]
+# Permutation indices for the full set of 49 joints
+J49_FLIP_PERM = [0, 1, 5, 6, 7, 2, 3, 4, 8, 12, 13, 14, 9, 10, 11, 16, 15, 18, 17, 22, 23, 24, 19, 20, 21]\
+              + [25+i for i in J24_FLIP_PERM]
+
 def flip_img(img):
     """Flip rgb images or masks.
     channels come last, e.g. (256,256,3).
@@ -203,9 +96,9 @@ def flip_img(img):
 def flip_kp(kp):
     """Flip keypoints."""
     if len(kp) == 24:
-        flipped_parts = constants.J24_FLIP_PERM
+        flipped_parts = J24_FLIP_PERM
     elif len(kp) == 49:
-        flipped_parts = constants.J49_FLIP_PERM
+        flipped_parts = J49_FLIP_PERM
     kp = kp[flipped_parts]
     kp[:, 0] = - kp[:, 0]
     return kp
@@ -215,7 +108,7 @@ def flip_pose(pose):
     """Flip pose.
     The flipping is based on SMPL parameters.
     """
-    flipped_parts = constants.SMPL_POSE_FLIP_PERM
+    flipped_parts = SMPL_POSE_FLIP_PERM
     pose = pose[flipped_parts]
     # we also negate the second and the third dimension of the axis-angle
     pose[1::3] = -pose[1::3]

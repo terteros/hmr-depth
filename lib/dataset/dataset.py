@@ -10,22 +10,18 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 from lib.cfg import parse_args
+from lib.dataset.image_utils import get_transform
 from lib.misc import select_batches
 from lib.dataset.modality import *
-
-
-def parse_image_path(img_path: str):
-    split = img_path.split('/')
-    subject = split[-3]
-    action, cam_id = split[-2].split('.')
-    frame_id = split[-1].split('.')[0]
-    return subject, action, cam_id, frame_id
 
 
 class ModularBaseDataset(Dataset):
     def __init__(self, db_file_path, options, frame_skip=1):
         self.options = options
         self.db = joblib.load(db_file_path)
+        # TODO: solve this in another way
+        if '3dpw' in db_file_path:
+            self.db['bbox_scale'] *= 1.3/1.1
         if frame_skip is None:
             frame_skip = options.DATASET.FRAME_SKIP
         def not_skip(img_name):
@@ -74,7 +70,6 @@ class Dataset3D(ModularBaseDataset):
         if 'pose' in self.db.keys():
             self.modalities['smpl'] = SmplModality(self.db)
 
-    # TODO: augmentation is never used.
     def generate_augmentation_params(self):
         """Get augmentation parameters."""
         flip = 0  # flipping
@@ -107,7 +102,10 @@ class Dataset3D(ModularBaseDataset):
     def generate_post_processing_params(self, item_idx):
         scale = max(self.db['bbox_scale'][item_idx].copy())
         center = self.db['bbox_center'][item_idx].copy()
-        return (scale, center) + self.generate_augmentation_params()
+        flip, pn, rot, sc = self.generate_augmentation_params()
+        transform_matrix = get_transform(center, scale*sc, [self.options.DATASET.IMG_RES, self.options.DATASET.IMG_RES],
+                                         rot=rot)
+        return scale, center, flip, pn, rot, sc, transform_matrix
 
 
 class DatasetDepth(Dataset3D):

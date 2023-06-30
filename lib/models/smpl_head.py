@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import torch.nn as nn
+from pytorch_lightning import LightningModule
 
 from smplx import SMPL as _SMPL
 from smplx.utils import SMPLOutput
@@ -32,6 +32,7 @@ class SMPL(_SMPL):
                              betas=smpl_output.betas,
                              full_pose=smpl_output.full_pose)
         return output
+
 
 def convert_weak_perspective_to_perspective(
         weak_perspective_camera,
@@ -83,7 +84,7 @@ def perspective_projection(points, rotation, translation,
     return projected_points[:, :, :-1]
 
 
-class SmplHead(nn.Module):
+class SmplHead(LightningModule):
     def __init__(self, focal_length=5000., img_res=224):
         super(SmplHead, self).__init__()
         self.smpl = SMPL(constants.SMPL_MODEL_DIR, create_transl=False)
