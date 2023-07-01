@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import tqdm
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 from lib.cfg import parse_args
 from lib.dataset.image_utils import get_transform
@@ -21,12 +21,14 @@ class ModularBaseDataset(Dataset):
         self.db = joblib.load(db_file_path)
         # TODO: solve this in another way
         if '3dpw' in db_file_path:
-            self.db['bbox_scale'] *= 1.3/1.1
+            self.db['bbox_scale'] *= 1.3 / 1.1
         if frame_skip is None:
             frame_skip = options.DATASET.FRAME_SKIP
+
         def not_skip(img_name):
-            id = int(str(img_name).split('/')[-1].split('.')[0].replace('image_',''))
-            return (id-1) % frame_skip == 0
+            id = int(str(img_name).split('/')[-1].split('.')[0].replace('image_', ''))
+            return (id - 1) % frame_skip == 0
+
         frame_skip_mask = np.vectorize(not_skip)(self.db['image_path'])
         self.db = select_batches(self.db, frame_skip_mask)
 
@@ -103,16 +105,38 @@ class Dataset3D(ModularBaseDataset):
         scale = max(self.db['bbox_scale'][item_idx].copy())
         center = self.db['bbox_center'][item_idx].copy()
         flip, pn, rot, sc = self.generate_augmentation_params()
-        transform_matrix = get_transform(center, scale*sc, [self.options.DATASET.IMG_RES, self.options.DATASET.IMG_RES],
+        transform_matrix = get_transform(center, scale * sc,
+                                         [self.options.DATASET.IMG_RES, self.options.DATASET.IMG_RES],
                                          rot=rot)
         return scale, center, flip, pn, rot, sc, transform_matrix
 
 
 class DatasetDepth(Dataset3D):
     def __init__(self, db_file_path, data_root, options, hdf5=True, frame_skip=1, use_augmentation=False):
-        super().__init__(db_file_path, data_root, options, hdf5, frame_skip=frame_skip, use_augmentation=use_augmentation)
+        super().__init__(db_file_path, data_root, options, hdf5, frame_skip=frame_skip,
+                         use_augmentation=use_augmentation)
         self.modalities['dp'] = DensePoseModality(self.db['dp_path_hdf'], data_root, dp_size=(256, 256))
         self.modalities['depth'] = DepthModality(self.db['depth_path_hdf'], data_root, depth_size=(256, 256))
+
+
+def build_dataloaders(cfg, stage: str):
+    dataset_config = getattr(cfg.DATASET, stage.upper())
+    dataloaders = []
+    for dataset_name in dataset_config.SET:
+        dataset = DatasetDepth(f'{constants.DATA_DIR}/{dataset_name}/{dataset_name}_{stage}.pt',
+                               f'{constants.DATA_DIR}/{dataset_name}',
+                               cfg,
+                               frame_skip=dataset_config.FRAME_SKIP,
+                               use_augmentation=dataset_config.AUG)
+        loader = DataLoader(
+            dataset=dataset,
+            batch_size=dataset_config.BATCH_SIZE,
+            shuffle=False,
+            num_workers=cfg.NUM_WORKERS
+        )
+        dataloaders.append(loader)
+
+    return dataloaders
 
 
 if __name__ == '__main__':

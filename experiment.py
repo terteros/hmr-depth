@@ -1,9 +1,14 @@
 import argparse
+from typing import Any
+
+from pytorch_lightning.utilities import rank_zero_only
+
 from lib.cfg import update_cfg
 from lib.models.hmr import HMR
 from lib.dataset.dataset import DatasetDepth
 import torch
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import LightningLoggerBase
 
 ORIGINAL_CHKPT = '/home/batuhan/ssl-part-render/results/cviu/3dpwn_l3d_drl_cp/DEPTH_LOSS_9.0_SEED_VALUE_4_' \
                  '/3dpwn_l3d_drl_cp/a0f9ee9a629e4aba95ac83adef5b9b12/checkpoints/epoch=4-val_loss=198.6940.ckpt'
@@ -29,6 +34,7 @@ cfg = update_cfg(args.cfg)
 model = HMR.load_from_checkpoint('epoch=4-val_loss=198.6940.ckpt', strict=False, hparams=cfg)
 model.eval()
 
+
 # dataset = DatasetDepth(f'./data/h36m/h36m_test.pt', f'./data/h36m', cfg, frame_skip=10, use_augmentation=False)
 # dataloader = torch.utils.data.DataLoader(
 #     dataset=dataset,
@@ -53,12 +59,41 @@ model.eval()
 #     # breakpoint()
 #     break
 
+class MyLogger(LightningLoggerBase):
+    @property
+    def experiment(self) -> Any:
+        pass
+
+    def log_text(self, *args, **kwargs) -> None:
+        pass
+
+    def log_image(self, *args, **kwargs) -> None:
+        pass
+
+    @property
+    def name(self):
+        return "MyLogger"
+
+    @property
+    def version(self):
+        # Return the experiment version, int or str.
+        return "0.1"
+
+    @rank_zero_only
+    def log_hyperparams(self, params):
+        print(params)
+
+    @rank_zero_only
+    def log_metrics(self, metrics, step):
+        print(metrics)
+
 
 trainer = pl.Trainer(
     gpus=1,
     flush_logs_every_n_steps=1,
     enable_progress_bar=True,
-    progress_bar_refresh_rate=1
+    progress_bar_refresh_rate=1,
+    logger=MyLogger()
 )
-test_results = trainer.validate(model)
+test_results = trainer.test(model)
 print(test_results)

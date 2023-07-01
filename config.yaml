@@ -1,8 +1,9 @@
 DATASET:
   IMG_RES: 224
-  DB_FILE_PATH: 'data/h36m/h36m_train.pt'
-  EVAL_DB_FILE_PATH: 'data/h36m/h36m_val_subset.pt'
-  TEST_DB_FILE_PATH: './data/3dpw/3dpw_test_db.mine.pt'
+  VAL:
+    FRAME_SKIP: 5
+  TEST:
+    FRAME_SKIP: 10
 NUM_WORKERS: 8
 OPTIMIZER:
   TYPE: 'adam'
@@ -12,22 +13,11 @@ LOSS:
   KEYPOINT_3D_LOSS_WEIGHT: 0.
   KEYPOINT_2D_LOSS_WEIGHT: 5.
   SHAPE_LOSS_WEIGHT: 0. # 0.05
-  POSE_LOSS_WEIGHT: 0.
-  BETA_LOSS_WEIGHT: 0.
-  OPENPOSE_TRAIN_WEIGHT: 0.
-  GT_TRAIN_WEIGHT: 1.
   LOSS_WEIGHT: 60.
   DEPTH_LOSS_WEIGHT: 5.
-  ONLY_TORSO: 0
   CAM_LOSS_WEIGHT: 1.
 TRAIN:
-  # PRETRAINED: '/home/batuhan/Source/Depth/ssl-part-render/results/root_rotation/dw5.0/root_rotation/a419131571f1467eac185febac1f0791/checkpoints/epoch=29-mpjpe=235.4680.ckpt'
-  BATCH_SIZE: 32
   MAX_EPOCH: 1
-
-TEST:
-  LOG_FREQ_TB_IMAGES: 100
-  SAVE_RESULTS: False # TODO: I am using this to save eval metrics and imgs, not model outputs.
 CUDNN:
   BENCHMARK: True
   DETERMINISTIC: False
