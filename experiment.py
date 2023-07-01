@@ -1,19 +1,9 @@
 import argparse
-
-import cv2
-from pytorch3d.transforms import rotation_6d_to_matrix
-from tqdm import tqdm
-
-from lib.cfg import parse_args, update_cfg
-from lib.misc import to_numpy
+from lib.cfg import update_cfg
 from lib.models.hmr import HMR
-from lib.models.hmr_head import HmrHead
-from lib.models.resnet import resnet50
-from lib.models.smpl_head import SmplHead
-from lib.constants import SMPL_MEAN_PARAMS
 from lib.dataset.dataset import DatasetDepth
-import numpy as np
 import torch
+import pytorch_lightning as pl
 
 ORIGINAL_CHKPT = '/home/batuhan/ssl-part-render/results/cviu/3dpwn_l3d_drl_cp/DEPTH_LOSS_9.0_SEED_VALUE_4_' \
                  '/3dpwn_l3d_drl_cp/a0f9ee9a629e4aba95ac83adef5b9b12/checkpoints/epoch=4-val_loss=198.6940.ckpt'
@@ -39,26 +29,36 @@ cfg = update_cfg(args.cfg)
 model = HMR.load_from_checkpoint('epoch=4-val_loss=198.6940.ckpt', strict=False, hparams=cfg)
 model.eval()
 
-dataset = DatasetDepth(f'./data/h36m/h36m_test.pt', f'./data/h36m', cfg, frame_skip=10, use_augmentation=False)
-dataloader = torch.utils.data.DataLoader(
-    dataset=dataset,
-    batch_size=32,
-    shuffle=True,
-    num_workers=0
+# dataset = DatasetDepth(f'./data/h36m/h36m_test.pt', f'./data/h36m', cfg, frame_skip=10, use_augmentation=False)
+# dataloader = torch.utils.data.DataLoader(
+#     dataset=dataset,
+#     batch_size=32,
+#     shuffle=True,
+#     num_workers=0
+# )
+#
+# pbar = tqdm(len(dataset))
+# for idx, batch in enumerate(dataloader):
+#     pbar.update(cfg.TRAIN.BATCH_SIZE)
+#
+#     img_cv2 = dataset.get_debug_image(batch)
+#     cv2.imwrite('test_gt.png', img_cv2)
+#
+#     pred = model(batch['img'])
+#     batch['kp_3d'] = pred['smpl_joints3d']
+#     batch['kp_2d'] = pred['smpl_joints2d']
+#
+#     img_cv2 = dataset.get_debug_image(batch)
+#     cv2.imwrite('test_pred.png', img_cv2)
+#     # breakpoint()
+#     break
+
+
+trainer = pl.Trainer(
+    gpus=1,
+    flush_logs_every_n_steps=1,
+    enable_progress_bar=True,
+    progress_bar_refresh_rate=1
 )
-
-pbar = tqdm(len(dataset))
-for idx, batch in enumerate(dataloader):
-    pbar.update(cfg.TRAIN.BATCH_SIZE)
-
-    img_cv2 = dataset.get_debug_image(batch)
-    cv2.imwrite('test_gt.png', img_cv2)
-
-    pred = model(batch['img'])
-    batch['kp_3d'] = pred['smpl_joints3d']
-    batch['kp_2d'] = pred['smpl_joints2d']
-
-    img_cv2 = dataset.get_debug_image(batch)
-    cv2.imwrite('test_pred.png', img_cv2)
-    # breakpoint()
-    exit(0)
+test_results = trainer.validate(model)
+print(test_results)

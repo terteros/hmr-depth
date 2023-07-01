@@ -5,32 +5,53 @@ from pytorch_lightning import LightningModule
 from smplx import SMPL as _SMPL
 from smplx.utils import SMPLOutput
 from smplx.lbs import vertices2joints
+from torch import nn
+
 from lib import constants
+from lib.constants import H36M_TO_J14
 
 
-# Map joints to SMPL joints
+class JointRegressor(nn.Module):
+    def __init__(self, regressor_type):
+        super(JointRegressor, self).__init__()
+        self.regressor_type = regressor_type
+        if regressor_type == 'smpl_54':
+            joint_regressor = np.load(constants.JOINT_REGRESSOR_TRAIN_EXTRA)
+            self.register_buffer('joint_regressor', torch.tensor(joint_regressor, dtype=torch.float32))
+        elif regressor_type == 'h36m':
+            joint_regressor = np.load(constants.JOINT_REGRESSOR_H36M)
+            self.register_buffer('joint_regressor', torch.tensor(joint_regressor, dtype=torch.float32))
+        else:
+            raise NotImplementedError()
+
+    def forward(self, smpl_output):
+        extra_joints = vertices2joints(self.joint_regressor, smpl_output.vertices)
+        if self.regressor_type == 'smpl_54':
+            joints = [constants.JOINT_MAP[i] for i in constants.JOINT_NAMES]
+            joint_map = torch.tensor(joints, dtype=torch.long)
+            joints = torch.cat([smpl_output.joints, extra_joints], dim=1)
+            joints = joints[:, joint_map, :]
+            return joints[:, 25:39, :]
+        if self.regressor_type == 'h36m':
+            return extra_joints[:, H36M_TO_J14, :]
+
 
 class SMPL(_SMPL):
     """ Extension of the official SMPL implementation to support more joints """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, regressor_type='h36m', **kwargs):
         super(SMPL, self).__init__(*args, **kwargs)
-        joints = [constants.JOINT_MAP[i] for i in constants.JOINT_NAMES]
-        J_regressor_extra = np.load(constants.JOINT_REGRESSOR_TRAIN_EXTRA)
-        self.register_buffer('J_regressor_extra', torch.tensor(J_regressor_extra, dtype=torch.float32))
-        self.joint_map = torch.tensor(joints, dtype=torch.long)
+        self.joint_regressor = JointRegressor(regressor_type)
 
     def forward(self, *args, **kwargs):
         kwargs['get_skin'] = True
         smpl_output = super(SMPL, self).forward(*args, **kwargs)
-        extra_joints = vertices2joints(self.J_regressor_extra, smpl_output.vertices)
-        joints = torch.cat([smpl_output.joints, extra_joints], dim=1)
-        joints = joints[:, self.joint_map, :]
+        joints = self.joint_regressor(smpl_output)
         output = SMPLOutput(vertices=smpl_output.vertices,
-                             global_orient=smpl_output.global_orient,
-                             body_pose=smpl_output.body_pose,
-                             joints=joints,
-                             betas=smpl_output.betas,
-                             full_pose=smpl_output.full_pose)
+                            global_orient=smpl_output.global_orient,
+                            body_pose=smpl_output.body_pose,
+                            joints=joints,
+                            betas=smpl_output.betas,
+                            full_pose=smpl_output.full_pose)
         return output
 
 
@@ -85,21 +106,14 @@ def perspective_projection(points, rotation, translation,
 
 
 class SmplHead(LightningModule):
-    def __init__(self, focal_length=5000., img_res=224):
+    def __init__(self, focal_length=5000., img_res=224, regressor_type='h36m'):
         super(SmplHead, self).__init__()
-        self.smpl = SMPL(constants.SMPL_MODEL_DIR, create_transl=False)
+        self.smpl = SMPL(constants.SMPL_MODEL_DIR, create_transl=False, regressor_type='h36m')
         self.faces = torch.from_numpy(self.smpl.faces.astype('int32')[None])
         self.focal_length = focal_length
         self.img_res = img_res
 
     def forward(self, rotmat, shape, cam=None, normalize_joints2d=False):
-        '''
-        :param rotmat: rotation in euler angles format (N,J,3,3)
-        :param shape: smpl betas
-        :param cam: weak perspective camera
-        :param normalize_joints2d: bool, normalize joints between -1, 1 if true
-        :return: dict with keys 'vertices', 'joints3d', 'joints2d' if cam is True
-        '''
         smpl_output = self.smpl(
             betas=shape,
             body_pose=rotmat[:, 1:].contiguous(),
