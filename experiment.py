@@ -12,8 +12,6 @@ from pytorch_lightning.loggers import LightningLoggerBase
 
 ORIGINAL_CHKPT = '/home/batuhan/ssl-part-render/results/cviu/3dpwn_l3d_drl_cp/DEPTH_LOSS_9.0_SEED_VALUE_4_' \
                  '/3dpwn_l3d_drl_cp/a0f9ee9a629e4aba95ac83adef5b9b12/checkpoints/epoch=4-val_loss=198.6940.ckpt'
-
-
 def update_hmr_checkpoint(in_file, out_file):
     chkpt = torch.load(in_file)
     from collections import OrderedDict
@@ -30,34 +28,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cfg', type=str, help='cfg file path')
 args = parser.parse_args()
 cfg = update_cfg(args.cfg)
+if cfg.SEED_VALUE >= 0:
+    pl.seed_everything(cfg.SEED_VALUE, workers=True)
 
-model = HMR.load_from_checkpoint('epoch=4-val_loss=198.6940.ckpt', strict=False, hparams=cfg)
-model.eval()
-
-
-# dataset = DatasetDepth(f'./data/h36m/h36m_test.pt', f'./data/h36m', cfg, frame_skip=10, use_augmentation=False)
-# dataloader = torch.utils.data.DataLoader(
-#     dataset=dataset,
-#     batch_size=32,
-#     shuffle=True,
-#     num_workers=0
-# )
-#
-# pbar = tqdm(len(dataset))
-# for idx, batch in enumerate(dataloader):
-#     pbar.update(cfg.TRAIN.BATCH_SIZE)
-#
-#     img_cv2 = dataset.get_debug_image(batch)
-#     cv2.imwrite('test_gt.png', img_cv2)
-#
-#     pred = model(batch['img'])
-#     batch['kp_3d'] = pred['smpl_joints3d']
-#     batch['kp_2d'] = pred['smpl_joints2d']
-#
-#     img_cv2 = dataset.get_debug_image(batch)
-#     cv2.imwrite('test_pred.png', img_cv2)
-#     # breakpoint()
-#     break
+# model = HMR.load_from_checkpoint('epoch=4-val_loss=198.6940.ckpt', strict=False, hparams=cfg)
+# model.eval()
 
 class MyLogger(LightningLoggerBase):
     @property
@@ -93,7 +68,10 @@ trainer = pl.Trainer(
     flush_logs_every_n_steps=1,
     enable_progress_bar=True,
     progress_bar_refresh_rate=1,
+    max_epochs=1,
     logger=MyLogger()
 )
-test_results = trainer.test(model)
-print(test_results)
+
+model = HMR(hparams=cfg)
+trainer.fit(model)
+print(trainer.test())

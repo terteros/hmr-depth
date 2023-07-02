@@ -11,6 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from lib.cfg import parse_args
 from lib.dataset.image_utils import get_transform
+from lib.dataset.mixed_dataset import MixedDataset
 from lib.misc import select_batches
 from lib.dataset.modality import *
 
@@ -69,8 +70,9 @@ class Dataset3D(ModularBaseDataset):
             'kp_2d': Keypoints2D(self.db, options),
             'kp_3d': Keypoints3D(self.db, options),
         }
-        if 'pose' in self.db.keys():
-            self.modalities['smpl'] = SmplModality(self.db)
+        # TODO: add placeholder items to modalities (already exists for depth and densepose)
+        # if 'pose' in self.db.keys():
+        #     self.modalities['smpl'] = SmplModality(self.db)
 
     def generate_augmentation_params(self):
         """Get augmentation parameters."""
@@ -121,22 +123,32 @@ class DatasetDepth(Dataset3D):
 
 def build_dataloaders(cfg, stage: str):
     dataset_config = getattr(cfg.DATASET, stage.upper())
-    dataloaders = []
+    datasets = []
     for dataset_name in dataset_config.SET:
         dataset = DatasetDepth(f'{constants.DATA_DIR}/{dataset_name}/{dataset_name}_{stage}.pt',
                                f'{constants.DATA_DIR}/{dataset_name}',
                                cfg,
                                frame_skip=dataset_config.FRAME_SKIP,
                                use_augmentation=dataset_config.AUG)
-        loader = DataLoader(
-            dataset=dataset,
-            batch_size=dataset_config.BATCH_SIZE,
-            shuffle=False,
-            num_workers=cfg.NUM_WORKERS
-        )
-        dataloaders.append(loader)
+        datasets.append(dataset)
 
-    return dataloaders
+    if stage == 'train':
+        mixed_dataset = MixedDataset(datasets, dataset_config.SAMPLE_RATIO)
+        return DataLoader(
+                dataset=mixed_dataset,
+                batch_size=dataset_config.BATCH_SIZE,
+                shuffle=True,
+                num_workers=cfg.NUM_WORKERS
+            )
+    else:
+        return [
+            DataLoader(
+                dataset=dataset,
+                batch_size=dataset_config.BATCH_SIZE,
+                shuffle=False,
+                num_workers=cfg.NUM_WORKERS
+            ) for dataset in datasets
+        ]
 
 
 if __name__ == '__main__':

@@ -1,18 +1,12 @@
-import os
-
-import numpy as np
 import pytorch_lightning as pl
 import torch
 
 from lib import metrics
-from lib.constants import DATA_DIR, H36M_TO_J14, SMPL_MODEL_DIR
-from lib.dataset.dataset import Dataset3D, build_dataloaders
+from lib.dataset.dataset import build_dataloaders
 from lib.models.hmr_head import HmrHead
 from lib.models.resnet import resnet50
 from lib.models.smpl_head import SmplHead
-
-
-
+from lib.losses import *
 
 
 class HMR(pl.LightningModule):
@@ -24,7 +18,11 @@ class HMR(pl.LightningModule):
         self.backbone = resnet50(pretrained=True)
         self.head = HmrHead(num_input_features=2048)
         self.smpl = SmplHead(img_res=self._hparams.DATASET.IMG_RES)
-        self.losses = []
+        self.losses = {
+            '2d': {'fun': Keypoints2DLoss(), 'weight': self._hparams.LOSS.KEYPOINT_2D_LOSS_WEIGHT},
+            '3d': {'fun': Keypoints3DLoss(), 'weight': self._hparams.LOSS.KEYPOINT_3D_LOSS_WEIGHT},
+            'cam': {'fun': CamRegularizationLoss(), 'weight': self._hparams.LOSS.CAM_LOSS_WEIGHT}
+        }
 
     def forward(self, images, valid_joints=list(range(24)), infer_shape=True):
         features = self.backbone(images)
@@ -38,6 +36,27 @@ class HMR(pl.LightningModule):
         smpl_output.update(hmr_output)
         return smpl_output
 
+    def configure_optimizers(self):
+        return torch.optim.Adam(
+            self.parameters(),
+            lr=self._hparams.OPTIMIZER.LR,
+            weight_decay=self._hparams.OPTIMIZER.WD
+        )
+
+    def training_step(self, batch, batch_nb):
+        valid_joints = self._hparams.TRAIN.PHASES[:int(self.current_epoch + 1)]
+        valid_joints = sum(valid_joints, [])
+        pred = self(batch['img'], valid_joints=valid_joints)
+
+        self.losses['2d']['current_val'] = self.losses['2d']['fun'](pred['smpl_joints2d'], batch['kp_2d'][:, 25:39, :])
+        self.losses['3d']['current_val'] = self.losses['3d']['fun'](pred['smpl_joints3d'], batch['kp_3d'][:, 25:39, :])
+        self.losses['cam']['current_val'] = self.losses['cam']['fun'](pred['pred_cam'])
+
+        loss_log = {f'loss/{loss}': self.losses[loss]['weight'] * self.losses[loss]['current_val'] for loss in
+                    self.losses.keys()}
+        self.log_dict(loss_log, on_step=True, prog_bar=True)
+        return sum(weighted_loss for weighted_loss in loss_log.values())
+
     def validation_step(self, batch, batch_nb, dataloader_idx=0):
         # TODO: make scheduled training more flexible (10 epochs only root, 20 epochs all etc.).
         valid_joints = self._hparams.TRAIN.PHASES[:int(self.current_epoch + 1)]
@@ -49,7 +68,7 @@ class HMR(pl.LightningModule):
         pred_keypoints_3d = pred['smpl_joints3d']
 
         mpjpe = metrics.mpjpe(pred_keypoints_3d, gt_keypoints_3d)
-        pampjpe, r_error_per_joint = metrics.pampjpe(pred_keypoints_3d,gt_keypoints_3d)
+        pampjpe, r_error_per_joint = metrics.pampjpe(pred_keypoints_3d, gt_keypoints_3d)
         results = {'mpjpe': mpjpe, 'pampjpe': pampjpe, 'd_idx': dataloader_idx}
         return results
 
@@ -79,6 +98,9 @@ class HMR(pl.LightningModule):
 
     def test_epoch_end(self, outputs):
         self._val_epoch_end(outputs, is_test=True)
+
+    def train_dataloader(self):
+        return build_dataloaders(self._hparams, 'train')
 
     def val_dataloader(self):
         return build_dataloaders(self._hparams, 'val')
