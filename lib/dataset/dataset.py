@@ -137,7 +137,7 @@ def build_dataloaders(cfg, stage: str):
         return DataLoader(
                 dataset=mixed_dataset,
                 batch_size=dataset_config.BATCH_SIZE,
-                shuffle=True,
+                shuffle=dataset_config.SHUFFLE,
                 num_workers=cfg.NUM_WORKERS
             )
     else:
@@ -145,7 +145,7 @@ def build_dataloaders(cfg, stage: str):
             DataLoader(
                 dataset=dataset,
                 batch_size=dataset_config.BATCH_SIZE,
-                shuffle=False,
+                shuffle=dataset_config.SHUFFLE,
                 num_workers=cfg.NUM_WORKERS
             ) for dataset in datasets
         ]
