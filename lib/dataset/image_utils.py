@@ -3,9 +3,6 @@ This file contains functions that are used to perform data augmentation.
 """
 import cv2
 import numpy as np
-import scipy.misc
-
-from lib import constants
 
 
 def get_transform(center, scale, res, rot=0):
