@@ -224,10 +224,10 @@ Estimating 3D human pose and shape (HPS) from a monocular image has many applica
         <h2 class="title is-3">Camera Pretraining</h2>
         <div class="content has-text-justified">
         Training objectives that minimize point-to-point distances get stuck at local minima (Figure 2).
-          This is caused by the non-linear nature of the Forward Kinematics and losses such as
-          2D re-projection and 3D joint losses (and our DDA) put the burden of solving the inverse problem to the model itself.
-          We identify that prioritizing the optimization of camera pose, which is the root of the kinematic chain, greatly alleviate
-          the problem. For this, we simply pretrain our models to learn only the camera parameters with fixed body pose and shape.
+          This is caused by the non-linear nature of the Forward Kinematics and losses, such as
+          2D re-projection and 3D joint losses (and our DDA) put the burden of solving the inverse problem on the model itself.
+          We identify that prioritizing the optimization of camera pose, which is the root of the kinematic chain, greatly alleviates
+          the problem. For this, we simply pre-train our models to learn only the camera parameters with fixed body pose and shape.
         </div>
       <img src="./static/images/cp_motivation.png" class="figure">
       </div>
